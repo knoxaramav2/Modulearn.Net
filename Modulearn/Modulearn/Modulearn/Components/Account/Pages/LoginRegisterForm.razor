@@ -1,0 +1,239 @@
+﻿@page "/Account/LoginRegister"
+@rendermode InteractiveServer
+
+@using ML_Components
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using Modulearn.Data
+
+@inject NavigationManager NavMan
+@inject IdentityRedirectManager RedirMan
+@inject IJSRuntime JsRuntime
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<LoginRegisterForm> Logger;
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+@inject UserManager<ApplicationUser> UserMan;
+@inject IUserStore<ApplicationUser> UserStore;
+@inject IEmailSender<ApplicationUser> EmailSender
+
+<PageTitle>LoginRegisterForm</PageTitle>
+<div >
+    <TabControl>
+        <TabPage Text="Login">
+            <div>
+                <EditForm Model="LoginInfo" OnValidSubmit="Login" FormName="login">
+                    <DataAnnotationsValidator/>
+                    
+                    <h2>Sign in to Modulearn!</h2>
+                    @* <ValidationSummary class="text-danger" role="alert"/> *@
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="LoginInfo.UserName" class="form-control" autocomplete="current-username" aria-required="true" placeholder="username"/>
+                        <label for="username" class="form-label">User Name</label>
+                        <ValidationMessage For="() => LoginInfo.UserName" class="text-danger"/>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="LoginInfo.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password"/>
+                        <label for="password" class="form-label">Password</label>
+                        <ValidationMessage For="() => LoginInfo.Password" class="text-danger"/>
+                    </div>
+                    <div class="form-label">
+                        <InputCheckbox @bind-Value="LoginInfo.RememberMe" class="darker-border-checkbox form-check-input"/>
+                        Remember me
+                    </div>
+                     <div>
+                        <button type="submit" class="w-100 btn btn-lg btn-primary">Sign In</button>
+                    </div>
+                    <div>
+                        <p>
+                            <a href="Account/ForgotPassword">Forgot your password?</a>
+                        </p>
+                    </div>
+                </EditForm>
+            </div>
+        </TabPage>
+        <TabPage Text="Register">
+            <div>
+                <EditForm Model="RegisterInfo" aso-route-returnUrl="@ReturnUrl" method="post"
+                OnValidSubmit="Register" FormName="register">
+                    <DataAnnotationsValidator/>
+                    <h2>Create Account</h2>
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="RegisterInfo.UserName" class="form-control" autocomplete="username" aria-required="true" placeholder="Username" />
+                        <label for="email">User Name</label>
+                        <ValidationMessage For="() => RegisterInfo.UserName" class="text-danger" />
+                    </div>
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="RegisterInfo.Email" class="form-control" autocomplete="email" aria-required="true" placeholder="name@example.com" />
+                        <label for="email">Email</label>
+                        <ValidationMessage For="() => RegisterInfo.Email" class="text-danger" />
+                    </div>
+                    <div class="form-floating mb-3">
+                        <InputText type="password" @bind-Value="RegisterInfo.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                        <label for="password">Password</label>
+                        <ValidationMessage For="() => RegisterInfo.Password" class="text-danger" />
+                    </div>
+                    <div class="form-floating mb-3">
+                        <InputText type="password" @bind-Value="RegisterInfo.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                        <label for="confirm-password">Confirm Password</label>
+                        <ValidationMessage For="() => RegisterInfo.ConfirmPassword" class="text-danger" />
+                    </div>
+                    <div class="form-label">
+                        <InputCheckbox @bind-Value="RegisterInfo.RememberMe" class="darker-border-checkbox form-check-input" />
+                        Remember me
+                    </div>
+                    <div>
+                        <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+                    </div>
+                </EditForm>
+            </div>
+        </TabPage>
+    </TabControl>
+</div>
+
+@code {
+    private string? errorMessage;
+    private IEnumerable<IdentityError>? identErrors;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private LoginModel LoginInfo { get; set; } = new();
+
+    [SupplyParameterFromForm]
+    private RegisterModel RegisterInfo { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContext != null && HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    public async Task Login()
+    {
+        var result = await SignInManager.PasswordSignInAsync(LoginInfo.UserName, LoginInfo.Password, LoginInfo.RememberMe, lockoutOnFailure: false);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation($"User {LoginInfo.UserName} logged in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo(
+                "Account/LoginWith2fa",
+                new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = LoginInfo.RememberMe });
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning($"User account {LoginInfo.UserName} locked.");
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            errorMessage = "Error: Invalid login attempt.";
+        }
+    }
+
+    private ApplicationUser CreateUser()
+    {
+        try
+        {
+            return Activator.CreateInstance<ApplicationUser>();
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Failed to creater user.");
+        }
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserMan.SupportsUserEmail)
+        {
+            throw new NotSupportedException("Email store unsupported");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    public async Task Register(EditContext ctx)
+    {
+        var user = CreateUser();
+
+        await UserStore.SetUserNameAsync(user, RegisterInfo.UserName, CancellationToken.None);
+        var emailStore = GetEmailStore();
+        await emailStore.SetEmailAsync(user, RegisterInfo.Email, CancellationToken.None);
+        var res = await UserMan.CreateAsync(user, RegisterInfo.Password);
+
+        if (!res.Succeeded)
+        {
+            identErrors = res.Errors;
+            return;
+        }
+
+        Logger.LogInformation($"User {RegisterInfo.UserName} created.");
+
+        var userId = await UserMan.GetUserIdAsync(user);
+        var code = await UserMan.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUri = NavMan.GetUriWithQueryParameters(
+            NavMan.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+            new Dictionary<string, object?> {["userId"]=userId, ["code"]=code, ["returnUrl"]=ReturnUrl});
+
+        await EmailSender.SendConfirmationLinkAsync(user, RegisterInfo.Email, HtmlEncoder.Default.Encode(callbackUri));
+
+        if (UserMan.Options.SignIn.RequireConfirmedAccount)
+        {
+            RedirectManager.RedirectTo("Account/RegisterConfirmation",
+            new() { ["email"] = RegisterInfo.Email, ["returnUrl"]=ReturnUrl });
+        }
+
+        await SignInManager.SignInAsync(user, isPersistent:false);
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private sealed class RegisterModel
+    {
+        [Required]
+        public string UserName { get; set; } = "";
+
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        [Compare("Password", ErrorMessage = "Password mismatch")]
+        public string ConfirmPassword { get; set; } = "";
+
+        [Display(Name = "Remember me")]
+        public bool RememberMe { get; set; }
+    }
+
+    private sealed class LoginModel
+    {
+        [Required]
+        public string UserName { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [Display(Name = "Remember me")]
+        public bool RememberMe { get; set; }
+    }
+}

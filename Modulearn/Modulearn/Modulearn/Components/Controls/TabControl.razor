@@ -1,0 +1,48 @@
+﻿@namespace ML_Components
+@rendermode InteractiveAuto
+
+<CascadingValue Value="this">
+    <div class="btn-group" role="group">
+        @foreach(TabPage tpage in Pages)
+        {
+            <button
+                class="btn @GetButtonClass(tpage)"
+                @onclick="() => SelectTab(tpage)">
+                @tpage.Text
+            </button>
+        }
+
+    </div>
+    
+    @ChildContent
+</CascadingValue>
+
+@code {
+    [Parameter]
+    public RenderFragment ChildContent { get; set; }
+
+    public TabPage? CurrPage { get; set; } = null;
+    private List<TabPage> Pages = new List<TabPage>();
+
+    internal void AddPage(TabPage page)
+    {
+        Pages.Add(page);
+        if (Pages.Count == 1)
+        {
+            CurrPage = page;
+        }
+        StateHasChanged();
+    }
+
+    internal string GetButtonClass(TabPage page)
+    {
+        return page == CurrPage ? "btn-primary" : "btn-secondary";
+    }
+
+    internal void SelectTab(TabPage page)
+    {
+        Console.WriteLine("Tab switch");
+        CurrPage = page;
+    }
+
+}
